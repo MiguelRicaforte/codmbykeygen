@@ -839,17 +839,18 @@ import asyncio
 # ───────────────────────────────────────────────────────────────────────────────
 
 
-# ─── drop-in replacement for your current main() ──────────────────────────────
 def main() -> None:
     """
-    In Streamlit the script runs inside ScriptRunner.scriptThread,
-    which has no asyncio event loop by default.  We create & register
-    a new loop in that thread *before* starting the Telegram bot.
+    Streamlit runs this code inside ScriptRunner.scriptThread (not the main
+    interpreter thread).  We:
+      1. Create & register our own asyncio event loop for that thread
+      2. Build the python-telegram-bot Application
+      3. Run polling with *no* OS signal handlers (stop_signals=[])
     """
-    # 1) Create an event loop for this Streamlit worker thread
+    # 1️⃣  event-loop for this thread
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-    # 2) Build the bot application exactly as before
+    # 2️⃣  build the bot (handlers exactly as before)
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("gen", generate_key_command))
     app.add_handler(CommandHandler("addwallet", addwallet_command))
@@ -857,18 +858,21 @@ def main() -> None:
     app.add_handler(CommandHandler("pause", pause_key_command))
     app.add_handler(CommandHandler("unpause", unpause_key_command))
     app.add_handler(CommandHandler("check", check_key_command))
-    app.add_handler(MessageHandler(
-        filters.Document.ALL & filters.CaptionRegex(r'^/setcsv$'),
-        set_csv_handler
-    ))
+    app.add_handler(
+        MessageHandler(
+            filters.Document.ALL & filters.CaptionRegex(r'^/setcsv$'),
+            set_csv_handler
+        )
+    )
     app.add_handler(CommandHandler("balance", balance_command))
     app.add_error_handler(error_handler)
 
-    # 3) Run the bot (blocking call, but fine inside Streamlit thread)
-    app.run_polling(poll_interval=3, timeout=20)
+    # 3️⃣  start polling • skip signal handlers so it works outside main thread
+    app.run_polling(poll_interval=3, timeout=20, stop_signals=[])
 
 
-# ─── call it when this module is executed directly ────────────────────────────
+# ─── execute when script is run directly ──────────────────────────────────────
 if __name__ == "__main__":
     main()
+
 
